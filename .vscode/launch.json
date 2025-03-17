@@ -1,0 +1,26 @@
+{
+    // Utilisez IntelliSense pour en savoir plus sur les attributs possibles.
+    // Pointez pour afficher la description des attributs existants.
+    // Pour plus d'informations, visitez : https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        
+        {
+            "name": "Python Debugger: Python File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "args": [
+                "--host=127.0.0.1", 
+                "--port=8000", 
+                "--transcription=True", 
+                "--diarization=True", 
+                "--model=medium", 
+                "--model_cache_dir=.model_cache_dir", 
+                "--lan=fr",
+                "--task=transcribe",
+                "--backend=mlx-whisper"
+            ],
+        }
+    ]
+}
