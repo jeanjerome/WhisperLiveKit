@@ -6,7 +6,7 @@ import math
 import torch
 from typing import List
 import numpy as np
-from timed_objects import ASRToken
+from core.timed_objects import ASRToken
 
 logger = logging.getLogger(__name__)
 

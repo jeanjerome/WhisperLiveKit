@@ -14,7 +14,7 @@ from diart.sources import AudioSource, MicrophoneAudioSource
 from pyannote.core import Annotation
 from rx.core import Observer
 
-from timed_objects import SpeakerSegment
+from core.timed_objects import SpeakerSegment
 
 logger = logging.getLogger(__name__)
 

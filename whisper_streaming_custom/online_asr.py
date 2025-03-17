@@ -2,7 +2,7 @@ import sys
 import numpy as np
 import logging
 from typing import List, Tuple, Optional
-from timed_objects import ASRToken, Sentence, Transcript
+from core.timed_objects import ASRToken, Sentence, Transcript
 
 logger = logging.getLogger(__name__)
 

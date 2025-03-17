@@ -7,7 +7,7 @@ import uuid
 from time import time
 from typing import Any, Dict, List, Optional, Tuple
 
-from timed_objects import ASRToken
+from core.timed_objects import ASRToken
 
 logger = logging.getLogger(__name__)
 

@@ -22,6 +22,19 @@ class ServerConfig(BaseModel):
             raise ValueError(f"Log level must be one of {valid_levels}")
         return v
 
+class AudioConfig(BaseModel):
+    """Audio processing configuration parameters."""
+    audio: str = "ffmpeg"
+    sample_rate: int = 16000
+    channels: int = 1
+    sample_width: int = 2  # 16-bit audio
+    
+    @field_validator('audio')
+    def check_audio(cls, v):
+        if v not in ["ffmpeg", "pyannote"]:
+            raise ValueError("audio must be either 'ffmpeg' or 'pyannote'")
+        return v
+    
 
 class ASRConfig(BaseModel):
     """Automatic Speech Recognition (ASR) configuration parameters."""
@@ -71,6 +84,7 @@ class DiarizationConfig(BaseModel):
 class AppConfig(BaseModel):
     """Global application configuration."""
     server: ServerConfig = Field(default_factory=ServerConfig)
+    audio: AudioConfig = Field(default_factory=AudioConfig)
     asr: ASRConfig = Field(default_factory=ASRConfig)
     diarization: DiarizationConfig = Field(default_factory=DiarizationConfig)
 
@@ -93,8 +107,10 @@ def setup_cli_parser() -> argparse.ArgumentParser:
     parser.add_argument("--warmup-file", type=str, default=None, dest="warmup_file",
                       help="The path to a speech audio wav file to warm up Whisper.")
     
-    # Note: we remove the --log-level definition here to avoid conflict
-    
+    # Audio backend arguments
+    parser.add_argument("--audio", type=str, default="ffmpeg",
+                      help="The audio library to capture microphone access (ffmpeg or pyaudio).")
+
     # Application-specific arguments
     parser.add_argument("--transcription", type=bool, default=True,
                       help="To disable to only see live diarization results.")
@@ -126,6 +142,9 @@ def load_config_from_args(args: argparse.Namespace) -> AppConfig:
     config.server.host = args.host
     config.server.port = args.port
     config.server.warmup_file = args.warmup_file
+    
+    # Configure audio
+    config.audio.audio = args.audio
     
     # Use log_level value provided by add_shared_args
     if hasattr(args, 'log_level'):

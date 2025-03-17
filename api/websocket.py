@@ -13,7 +13,8 @@ import numpy as np
 from fastapi import WebSocket, WebSocketDisconnect
 
 from core.state import SessionManager, SessionState
-from services.audio import AudioService, FFmpegAudioProcessor
+from processors.audio.interface import AudioProcessorInterface
+from services.audio import AudioService
 from services.diarization import DiarizationService
 from services.transcription import TranscriptionService
 
@@ -80,7 +81,7 @@ class WebSocketHandler:
         session_id, session = await self.session_manager.create_session()
         
         # Audio processing variables
-        ffmpeg_processor = self.audio_service.create_processor()
+        audio_processor = self.audio_service.create_processor()
         
         # Ensure services are available
         logger.debug(f"Available services: transcription={self.transcription_service is not None}, diarization={self.diarization_service is not None}")
@@ -133,15 +134,15 @@ class WebSocketHandler:
         )
         tasks.append(formatter_task)
         
-        # Add task to read FFmpeg output
-        ffmpeg_reader_task = asyncio.create_task(
-            self._ffmpeg_stdout_reader(ffmpeg_processor, transcription_queue, diarization_queue)
+        # Add task to read audio output
+        audio_reader_task = asyncio.create_task(
+            self._audio_stdout_reader(audio_processor, transcription_queue, diarization_queue)
         )
-        tasks.append(ffmpeg_reader_task)
+        tasks.append(audio_reader_task)
         
         try:
-            # Start the FFmpeg decoder
-            ffmpeg_process = await ffmpeg_processor.start_decoder()
+            # Start the audio decoder
+            audio_process = await audio_processor.start_decoder()
             
             # Variable to track sampling time
             last_process_time = time.time()
@@ -153,14 +154,14 @@ class WebSocketHandler:
                 logger.debug(f"Received audio chunk: {len(message)} bytes")
                 
                 try:
-                    # Send data to FFmpeg
-                    if ffmpeg_processor.process:
-                        ffmpeg_processor.process.stdin.write(message)
-                        ffmpeg_processor.process.stdin.flush()
+                    # Send data to audio
+                    if audio_processor.process:
+                        audio_processor.process.stdin.write(message)
+                        audio_processor.process.stdin.flush()
                     else:
-                        await ffmpeg_processor.start_decoder()
-                        ffmpeg_processor.process.stdin.write(message)
-                        ffmpeg_processor.process.stdin.flush()
+                        await audio_processor.start_decoder()
+                        audio_processor.process.stdin.write(message)
+                        audio_processor.process.stdin.flush()
                     
                     # Calculate elapsed time since last processing
                     current_time = time.time()
@@ -169,9 +170,9 @@ class WebSocketHandler:
                     last_process_time = current_time
                     
                     # Read and process audio data
-                    if ffmpeg_processor.get_buffer_size() >= self.bytes_per_sec:
+                    if audio_processor.get_buffer_size() >= self.bytes_per_sec:
                         # Process data without sending a new message
-                        pcm_array, restarted = await ffmpeg_processor.process_audio_chunk(
+                        pcm_array, restarted = await audio_processor.process_audio_chunk(
                             b'',  # No need to send data as it's already in stdin
                             read_size,
                             self.max_bytes_per_sec
@@ -188,8 +189,8 @@ class WebSocketHandler:
                                 await diarization_queue.put(pcm_array.copy())
                     
                 except (BrokenPipeError, AttributeError) as e:
-                    logger.warning(f"Error writing to FFmpeg: {e}. Restarting...")
-                    await ffmpeg_processor.start_decoder()
+                    logger.warning(f"Error writing to audio processor: {e}. Restarting...")
+                    await audio_processor.start_decoder()
                 except Exception as e:
                     logger.error(f"Error processing audio: {e}", exc_info=True)
                     
@@ -206,8 +207,8 @@ class WebSocketHandler:
                 # Wait for all tasks to complete
                 await asyncio.gather(*tasks, return_exceptions=True)
                 
-                # Close the FFmpeg decoder
-                await ffmpeg_processor.stop_decoder()
+                # Close the audio decoder
+                await audio_processor.stop_decoder()
                 
                 # Close the diarization processor
                 if diarization_processor:
@@ -221,14 +222,14 @@ class WebSocketHandler:
                 
             logger.info("WebSocket endpoint cleaned up.")
             
-    async def _ffmpeg_stdout_reader(
+    async def _audio_stdout_reader(
         self, 
-        ffmpeg_processor: FFmpegAudioProcessor,
+        audio_processor: AudioProcessorInterface,
         transcription_queue: Optional[asyncio.Queue] = None,
         diarization_queue: Optional[asyncio.Queue] = None
     ):
         """
-        Reads the output from the FFmpeg process and distributes audio data.
+        Reads the output from the audio process and distributes audio data.
         """        
         loop = asyncio.get_event_loop()
         beg = time.time()
@@ -240,43 +241,43 @@ class WebSocketHandler:
                 read_size = max(int(self.sample_rate * elapsed_time * self.bytes_per_sample), 4096)
                 beg = time.time()
 
-                # Read directly from FFmpeg process
+                # Read directly from audio process
                 try:
                     raw_audio = await asyncio.wait_for(
                         loop.run_in_executor(
-                            None, lambda: ffmpeg_processor.process.stdout.read(read_size)
+                            None, lambda: audio_processor.process.stdout.read(read_size)
                         ),
                         timeout=15.0
                     )
                 except asyncio.TimeoutError:
-                    logger.warning("FFmpeg read timeout. Restarting...")
-                    await ffmpeg_processor.start_decoder()
+                    logger.warning("Audio read timeout. Restarting...")
+                    await audio_processor.start_decoder()
                     continue
                     
                 if not raw_audio:
-                    logger.debug("No audio data received from FFmpeg")
+                    logger.debug("No audio data received from audio processor")
                     await asyncio.sleep(0.1)
                     continue
                     
                 # Add to buffer
-                ffmpeg_processor.pcm_buffer.extend(raw_audio)
+                audio_processor.pcm_buffer.extend(raw_audio)
                 
                 # Process data if buffer is large enough
-                if len(ffmpeg_processor.pcm_buffer) >= self.bytes_per_sec:
+                if len(audio_processor.pcm_buffer) >= self.bytes_per_sec:
                     max_size = self.max_bytes_per_sec
-                    if len(ffmpeg_processor.pcm_buffer) > max_size:
+                    if len(audio_processor.pcm_buffer) > max_size:
                         logger.warning(
-                            f"Audio buffer is too large: {len(ffmpeg_processor.pcm_buffer) / self.bytes_per_sec:.2f} seconds."
+                            f"Audio buffer is too large: {len(audio_processor.pcm_buffer) / self.bytes_per_sec:.2f} seconds."
                         )
                     
                     # Convert to float32
                     pcm_array = (
-                        np.frombuffer(ffmpeg_processor.pcm_buffer[:max_size], dtype=np.int16).astype(np.float32)
+                        np.frombuffer(audio_processor.pcm_buffer[:max_size], dtype=np.int16).astype(np.float32)
                         / 32768.0
                     )
                     
                     # Keep the rest of the buffer
-                    ffmpeg_processor.pcm_buffer = ffmpeg_processor.pcm_buffer[max_size:]
+                    audio_processor.pcm_buffer = audio_processor.pcm_buffer[max_size:]
                     
                     logger.debug(f"Processed PCM data: {len(pcm_array)} samples")
                     
@@ -289,7 +290,7 @@ class WebSocketHandler:
                             await diarization_queue.put(pcm_array.copy())
                 
             except Exception as e:
-                logger.error(f"Error in ffmpeg_stdout_reader: {e}", exc_info=True)
+                logger.error(f"Error in audio_stdout_reader: {e}", exc_info=True)
                 await asyncio.sleep(0.5)
         
     async def _transcription_worker(self, session: SessionState, pcm_queue: asyncio.Queue, online):

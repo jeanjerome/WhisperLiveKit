@@ -58,11 +58,28 @@ async def initialize_audio():
     """
     global app_config
     
-    service = AudioService({
-        "sample_rate": 16000,
-        "channels": 1
-    })
-    await service.initialize()
+    # Configure audio service based on app configuration
+    audio_config = {
+        "sample_rate": app_config.audio.sample_rate,
+        "channels": app_config.audio.channels,
+        "sample_width": app_config.audio.sample_width,
+        "audio": app_config.audio.audio
+    }
+    
+    service = AudioService(audio_config)
+    
+    # Initialize the service
+    success = await service.initialize()
+    if not success:
+        if app_config.audio.audio == "pyaudio":
+            audio_config["audio"] = "ffmpeg"
+            service = AudioService(audio_config)
+            success = await service.initialize()
+            if not success:
+                raise RuntimeError("No audio backend available")
+        else:
+            raise RuntimeError("Failed to initialize audio backend. Check your installation.")
+    
     return service
 
 async def initialize_transcription():
@@ -160,8 +177,8 @@ async def create_app() -> FastAPI:
         transcription_service=transcription_service,
         diarization_service=diarization_service,
         config={
-            "sample_rate": 16000,
-            "channels": 1,
+            "sample_rate": app_config.audio.sample_rate,
+            "channels": app_config.audio.channels,
             "min_chunk_size": app_config.asr.min_chunk_size
         }
     )
@@ -179,6 +196,18 @@ async def create_app() -> FastAPI:
     async def websocket_endpoint(websocket: WebSocket):
         """WebSocket endpoint for real-time audio transcription."""
         await websocket_handler.handle_connection(websocket)
+        
+    # Add an endpoint to get information about the audio backend
+    @app.get("/api/info")
+    async def get_info():
+        """Returns information about the system configuration."""
+        return {
+            "audio_backend": app_config.audio.audio,
+            "transcription_enabled": app_config.asr.enabled,
+            "transcription_model": app_config.asr.model,
+            "transcription_backend": app_config.asr.backend,
+            "diarization_enabled": app_config.diarization.enabled,
+        }
     
     return app
 
@@ -200,6 +229,9 @@ def main():
     # Set up logging
     logger = setup_logging(app_config.server.log_level)
     logger.info("Starting WhisperLiveKit Server")
+    
+    # Log which audio backend is being used
+    logger.info(f"Using {app_config.audio.audio} audio backend")
     
     # Create and run the application with uvicorn
     app = asyncio.run(create_app())
