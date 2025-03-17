@@ -136,38 +136,48 @@ def load_config_from_args(args: argparse.Namespace) -> AppConfig:
     Returns:
         AppConfig: Application configuration
     """
-    config = AppConfig()
-    
     # Configure server
-    config.server.host = args.host
-    config.server.port = args.port
-    config.server.warmup_file = args.warmup_file
+    server_dict = {
+        "host": args.host,
+        "port": args.port,
+        "warmup_file": args.warmup_file,
+        "log_level": args.log_level if hasattr(args, 'log_level') else "INFO"
+    }
     
     # Configure audio
-    config.audio.audio = args.audio
-    
-    # Use log_level value provided by add_shared_args
-    if hasattr(args, 'log_level'):
-        config.server.log_level = args.log_level
+    audio_dict = {
+        "audio": args.audio
+    }
     
     # Configure ASR
-    config.asr.enabled = args.transcription
-    config.asr.model = args.model
-    config.asr.model_cache_dir = args.model_cache_dir
-    config.asr.model_dir = args.model_dir
-    config.asr.language = args.lan
-    config.asr.task = args.task
-    config.asr.backend = args.backend
-    config.asr.vad = args.vad
-    config.asr.vac = args.vac
-    config.asr.vac_chunk_size = args.vac_chunk_size
-    config.asr.min_chunk_size = args.min_chunk_size
-    config.asr.buffer_trimming = args.buffer_trimming
-    config.asr.buffer_trimming_sec = args.buffer_trimming_sec
-    config.asr.confidence_validation = args.confidence_validation
+    asr_dict = {
+        "enabled": args.transcription,
+        "model": args.model,
+        "model_cache_dir": args.model_cache_dir,
+        "model_dir": args.model_dir,
+        "language": args.lan,
+        "task": args.task,
+        "backend": args.backend,
+        "vad": args.vad,
+        "vac": args.vac,
+        "vac_chunk_size": args.vac_chunk_size,
+        "min_chunk_size": args.min_chunk_size,
+        "buffer_trimming": args.buffer_trimming,
+        "buffer_trimming_sec": args.buffer_trimming_sec,
+        "confidence_validation": args.confidence_validation
+    }
     
     # Configure diarization
-    config.diarization.enabled = args.diarization
+    diarization_dict = {
+        "enabled": args.diarization
+    }
+    
+    config = AppConfig(
+        server=ServerConfig(**server_dict),
+        audio=AudioConfig(**audio_dict),
+        asr=ASRConfig(**asr_dict),
+        diarization=DiarizationConfig(**diarization_dict)
+    )
     
     return config
 
